@@ -18,7 +18,5 @@ start:
 	uv run waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
 
 render-start:
-	@echo "Checking Gunicorn installation..."
-	uv pip show gunicorn || uv pip install gunicorn
 	@echo "Starting server..."
-	uv run gunicorn -w 4 -b 0.0.0.0:$(PORT) page_analyzer:app
+	~/.local/bin/uv run gunicorn -w 4 -b 0.0.0.0:$(PORT) page_analyzer:app
