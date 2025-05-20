@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 
+# Установка uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
-make install
 
-if ! command -v waitress-serve &> /dev/null; then
-    echo "Waitress not found! Reinstalling..."
-    uv pip install --force-reinstall waitress
-fi
+# Явная установка gunicorn
+/opt/render/.local/bin/uv pip install gunicorn
+
+# Установка зависимостей
+/opt/render/.local/bin/uv pip install -e .
