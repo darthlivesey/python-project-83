@@ -18,4 +18,5 @@ start:
 	uv run waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
 
 render-start:
-	waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
+	@echo "Starting server..."
+	uv run waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
