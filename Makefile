@@ -18,4 +18,4 @@ start:
 	uv run waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
 
 render-start:
-	waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
+	gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app
