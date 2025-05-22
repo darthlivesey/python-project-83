@@ -1,10 +1,5 @@
 #!/usr/bin/env bash
-
-# Установка uv
+# скачиваем uv и запускаем команду установки зависимостей
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Явная установка gunicorn
-/opt/render/.local/bin/uv pip install gunicorn
-
-# Установка зависимостей
-/opt/render/.local/bin/uv pip install -e .
+source $HOME/.local/bin/env
+make install
