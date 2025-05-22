@@ -1,22 +1,24 @@
-install:
-	uv sync
-
-dev:
-	uv run flask --debug --app page_analyzer:app run
+PORT ?= 8000
 
 build:
-	./build.sh
+		./build.sh
 
-lint:
-	uvx ruff check --config ruff.toml --fix
-
-test-coverage:
-	uv run pytest --cov=gendiff --cov-report xml
-
-PORT ?= 8000
-start:
-	uv run waitress-serve --host=0.0.0.0 --port=$(PORT) page_analyzer:app
+install:
+		uv sync
 
 render-start:
-	@echo "Starting server..."
-	~/.local/bin/uv run gunicorn -w 4 -b 0.0.0.0:$(PORT) page_analyzer:app
+		.venv/bin/python -m gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app
+
+
+start:
+		uv run gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app
+
+
+lint:
+		uv run ruff check
+
+lint-fix:
+		uv run ruff check --fix
+
+dev:
+		uv run flask --debug --app page_analyzer:app run
