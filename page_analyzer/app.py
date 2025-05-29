@@ -1,9 +1,10 @@
 import os
 
+import requests
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, url_for
 
-from .database import add_url_check, get_conn
+from .database import get_conn
 
 load_dotenv()
 app = Flask(__name__)
@@ -14,7 +15,7 @@ app.secret_key = os.getenv('SECRET_KEY')
 def index():
     if request.method == 'POST':
         url = request.form.get('url', '').strip()
-
+        
         if not url:
             flash('URL не может быть пустым', 'danger')
         elif len(url) > 255:
@@ -26,8 +27,7 @@ def index():
                 with get_conn() as conn:
                     with conn.cursor() as cur:
                         cur.execute("""
-                            INSERT INTO urls (url)
-                            VALUES (%s)
+                            INSERT INTO urls (url) VALUES (%s)
                             ON CONFLICT (url) DO NOTHING
                             RETURNING id
                         """, (url,))
@@ -48,18 +48,13 @@ def list_urls():
                 SELECT 
                     u.id, 
                     u.url, 
-                    uc.created_at AS last_check_date,
-                    uc.status_code
+                    MAX(uc.created_at) as last_check,
+                    (SELECT status_code FROM url_checks 
+                     WHERE url_id = u.id 
+                     ORDER BY created_at DESC LIMIT 1) as last_status
                 FROM urls u
-                LEFT JOIN (
-                    SELECT 
-                        url_id,
-                        created_at,
-                        status_code,
-                        ROW_NUMBER() OVER (PARTITION BY 
-                           url_id ORDER BY created_at DESC) AS rn
-                    FROM url_checks
-                ) uc ON u.id = uc.url_id AND uc.rn = 1
+                LEFT JOIN url_checks uc ON u.id = uc.url_id
+                GROUP BY u.id
                 ORDER BY u.id DESC;
             """)
             urls = cursor.fetchall()
@@ -70,25 +65,59 @@ def list_urls():
 def show_url(id):
     with get_conn() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT * FROM urls WHERE id = %s;", (id,))
+            cursor.execute("SELECT id, url FROM urls WHERE id = %s;", (id,))
             url = cursor.fetchone()
+            if not url:
+                flash('Сайт не найден', 'danger')
+                return redirect(url_for('list_urls'))
             
             cursor.execute("""
-                SELECT * FROM url_checks 
+                SELECT id, status_code, h1, title, description, created_at
+                FROM url_checks 
                 WHERE url_id = %s 
                 ORDER BY created_at DESC;
             """, (id,))
             checks = cursor.fetchall()
-    return render_template("url.html", url=url, checks=checks)
-    
+    return render_template("checks.html", 
+                         url={'id': url[0], 'name': url[1]}, 
+                         checks=checks)
+
 
 @app.post("/urls/<int:url_id>/checks")
 def add_check(url_id):
+    with get_conn() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT url FROM urls WHERE id = %s;", (url_id,))
+            url_data = cursor.fetchone()
+            if not url_data:
+                flash("Сайт не найден", "danger")
+                return redirect(url_for("show_url", id=url_id))
+            url = url_data[0]
+
     try:
-        check_id = add_url_check(url_id)
+        response = requests.get(
+            url,
+            timeout=10,
+            headers={'User-Agent': 'Mozilla/5.0'},
+            allow_redirects=True
+        )
+        response.raise_for_status()
+
+        with get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO url_checks (
+                        url_id, status_code  # Только обязательные поля
+                    ) VALUES (%s, %s)
+                    RETURNING id;
+                """, (url_id, response.status_code))
+                conn.commit()
+
         flash("Страница успешно проверена!", "success")
-    except Exception as e:
-        flash(f"Ошибка: {str(e)}", "danger")
+    except requests.exceptions.RequestException as e:
+        flash(f"Ошибка при проверке: {str(e)}", "danger")
+        app.logger.error(f"Ошибка проверки URL (id={url_id}): {str(e)}")
+
     return redirect(url_for("show_url", id=url_id))
 
 
