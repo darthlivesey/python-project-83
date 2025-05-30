@@ -1,6 +1,7 @@
 import os
 
 import requests
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, url_for
 
@@ -65,8 +66,13 @@ def list_urls():
 def show_url(id):
     with get_conn() as conn:
         with conn.cursor() as cursor:
-            cursor.execute("SELECT id, url FROM urls WHERE id = %s;", (id,))
+            cursor.execute("""
+                SELECT id, url, created_at 
+                FROM urls 
+                WHERE id = %s;
+            """, (id,))
             url = cursor.fetchone()
+            
             if not url:
                 flash('Сайт не найден', 'danger')
                 return redirect(url_for('list_urls'))
@@ -78,8 +84,13 @@ def show_url(id):
                 ORDER BY created_at DESC;
             """, (id,))
             checks = cursor.fetchall()
-    return render_template("checks.html", 
-                         url={'id': url[0], 'name': url[1]}, 
+         
+    return render_template("url_detail.html", 
+                         url={
+                             'id': url[0],
+                             'name': url[1],
+                             'created_at': url[2]
+                         }, 
                          checks=checks)
 
 
@@ -103,20 +114,39 @@ def add_check(url_id):
         )
         response.raise_for_status()
 
+        soup = BeautifulSoup(response.text, 'html.parser')
+        h1 = soup.h1.get_text().strip() if soup.h1 else None
+        title = soup.title.get_text().strip() if soup.title else None
+        meta_desc = soup.find('meta', attrs={'name': 'description'})
+        description = meta_desc['content'].strip() if meta_desc else None
+
         with get_conn() as conn:
             with conn.cursor() as cursor:
                 cursor.execute("""
                     INSERT INTO url_checks (
-                        url_id, status_code  # Только обязательные поля
-                    ) VALUES (%s, %s)
+                        url_id, 
+                        status_code,
+                        h1,
+                        title,
+                        description
+                    ) VALUES (%s, %s, %s, %s, %s)
                     RETURNING id;
-                """, (url_id, response.status_code))
+                """, (
+                    url_id, 
+                    response.status_code,
+                    h1,
+                    title,
+                    description
+                ))
                 conn.commit()
 
         flash("Страница успешно проверена!", "success")
     except requests.exceptions.RequestException as e:
         flash(f"Ошибка при проверке: {str(e)}", "danger")
         app.logger.error(f"Ошибка проверки URL (id={url_id}): {str(e)}")
+    except Exception as e:
+        flash(f"Ошибка парсинга страницы: {str(e)}", "warning")
+        app.logger.error(f"Ошибка парсинга (id={url_id}): {str(e)}")
 
     return redirect(url_for("show_url", id=url_id))
 

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Анализ сайта: {{ url.name }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .seo-field { max-width: 200px; word-wrap: break-word; }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Сайт: {{ url.name }}</h1>
+            <a href="{{ url_for('list_urls') }}" class="btn btn-secondary">
+                ← К списку
+            </a>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-body">
+                <table class="table table-sm table-borderless">
+                    <tbody>
+                        <tr>
+                            <th width="150">ID:</th>
+                            <td>{{ url.id }}</td>
+                        </tr>
+                        <tr>
+                            <th>URL:</th>
+                            <td>
+                                <a href="{{ url.name }}" target="_blank">
+                                    {{ url.name }}
+                                </a>
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Дата добавления:</th>
+                            <td>{{ url.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <form action="{{ url_for('add_check', url_id=url.id) }}" method="post" class="mb-4">
+            <button type="submit" class="btn btn-primary">
+                Запустить проверку
+            </button>
+        </form>
+
+        <h2 class="h4 mb-3">История проверок</h2>
+        
+        {% if checks %}
+        <div class="table-responsive">
+            <table class="table table-bordered table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Дата</th>
+                        <th>Код</th>
+                        <th class="seo-field">Заголовок (h1)</th>
+                        <th class="seo-field">Title</th>
+                        <th class="seo-field">Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for check in checks %}
+                    <tr>
+                        <td>{{ check[5].strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>{{ check[1] }}</td>
+                        <td class="seo-field">{{ check[2] or '—' }}</td>
+                        <td class="seo-field">{{ check[3] or '—' }}</td>
+                        <td class="seo-field">{{ check[4] or '—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            Пока нет ни одной проверки
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>
