@@ -10,11 +10,14 @@ load_dotenv()
 
 def get_conn():
     try:
-        conn = psycopg2.connect(os.getenv('DATABASE_URL'))
-        logger.info("Подключение к БД успешно")
+        conn = psycopg2.connect(
+            os.getenv('DATABASE_URL'),
+            connect_timeout=5
+        )
+        conn.autocommit = False
         return conn
     except Exception as e:
-        logger.error(f"Ошибка подключения к БД: {str(e)}")
+        logger.error(f"Database connection error: {str(e)}")
         raise
 
 
