@@ -1,5 +1,5 @@
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -7,6 +7,25 @@ from dotenv import load_dotenv
 from flask import Flask, flash, redirect, render_template, request, url_for
 
 from .database import get_conn
+
+
+def normalize_url(url_string):
+    parsed = urlparse(url_string)
+    
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    
+    if netloc.startswith('www.'):
+        netloc = netloc[4:]
+
+    if ':' in netloc:
+        host, port = netloc.split(':', 1)
+        if (scheme == 'http' and port == '80') or (scheme == 'https' 
+                                                   and port == '443'):
+            netloc = host
+    path = parsed.path.rstrip('/') or '/'
+    return urlunparse((scheme, netloc, path, '', '', ''))
+
 
 load_dotenv()
 app = Flask(__name__)
@@ -19,26 +38,40 @@ def index():
         url = request.form.get('url', '').strip()
         
         if not url:
-            flash('Некорректный URL', 'danger')
-        elif len(url) > 255:
-            flash('Некорректный URL', 'danger')
-        elif not url.startswith(('http://', 'https://')):
-            flash('Некорректный URL', 'danger')
-        else:
-            try:
-                with get_conn() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            INSERT INTO urls (url) VALUES (%s)
-                            ON CONFLICT (url) DO NOTHING
-                            RETURNING id
-                        """, (url,))
-                        if cur.fetchone():
-                            flash('Страница успешно добавлена!', 'success')
-                        else:
-                            flash('Страница уже существует', 'info')
-            except Exception as e:
-                flash(f'Ошибка базы данных: {str(e)}', 'danger')
+            flash('URL обязателен', 'danger')
+            return render_template('index.html'), 422
+            
+        try:
+            parsed = urlparse(url)
+            if not all([parsed.scheme, parsed.netloc]):
+                flash('Некорректный URL', 'danger')
+                return render_template('index.html'), 422
+                
+            normalized_url = normalize_url(url)
+            
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "INSERT INTO urls (url) VALUES (%s) ON CONFLICT "
+                        "(url) DO NOTHING RETURNING id",
+                        (normalized_url,)
+                    )
+                    result = cur.fetchone()
+                    conn.commit()
+                    
+                    if result:
+                        flash('Страница успешно добавлена', 'success')
+                        return redirect(url_for('show_url', id=result[0]))
+                    else:
+                        cur.execute("SELECT id FROM urls WHERE url = %s", 
+                                    (normalized_url,))
+                        existing_id = cur.fetchone()[0]
+                        flash('Страница уже существует', 'info')
+                        return redirect(url_for('show_url', id=existing_id))
+        except Exception as e:
+            flash(f'Ошибка базы данных: {str(e)}', 'danger')
+            return render_template('index.html'), 500
+            
     return render_template('index.html')
 
 
@@ -49,21 +82,21 @@ def handle_urls():
         
         if not url:
             flash('URL обязателен', 'danger')
-            return redirect(url_for('index'))
-        
+            return redirect(url_for('index')), 422
+            
         try:
             parsed = urlparse(url)
             if not all([parsed.scheme, parsed.netloc]):
                 flash('Некорректный URL', 'danger')
-                return redirect(url_for('index'))
+                return redirect(url_for('index')), 422
                 
-            normalized_url = f"{parsed.scheme}://{parsed.netloc}"
-
+            normalized_url = normalize_url(url)
+            
             with get_conn() as conn:
                 with conn.cursor() as cursor:
                     cursor.execute(
-                        "INSERT INTO urls (url) VALUES (%s) " 
-                        "ON CONFLICT (url) DO NOTHING RETURNING id",
+                        "INSERT INTO urls (url) VALUES (%s) ON CONFLICT (url) " 
+                        "DO NOTHING RETURNING id",
                         (normalized_url,)
                     )
                     result = cursor.fetchone()
@@ -73,15 +106,14 @@ def handle_urls():
                         flash('Страница успешно добавлена', 'success')
                         return redirect(url_for('show_url', id=result[0]))
                     else:
-                        cursor.execute("SELECT id FROM urls WHERE url = %s", (
-                            normalized_url,))
+                        cursor.execute("SELECT id FROM urls WHERE url = %s", 
+                                       (normalized_url,))
                         existing_id = cursor.fetchone()[0]
                         flash('Страница уже существует', 'info')
                         return redirect(url_for('show_url', id=existing_id))
-
         except Exception as e:
             flash(f'Ошибка при обработке URL: {str(e)}', 'danger')
-            return redirect(url_for('index'))
+            return redirect(url_for('index')), 500
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
@@ -116,7 +148,7 @@ def show_url(id):
             
             if not url:
                 flash('Сайт не найден', 'danger')
-                return redirect(url_for('list_urls'))
+                return redirect(url_for('handle_urls'))
             
             cursor.execute("""
                 SELECT id, status_code, h1, title, description, created_at
@@ -137,18 +169,17 @@ def show_url(id):
 
 @app.post("/urls/<int:url_id>/checks")
 def add_check(url_id):
-    with get_conn() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT url FROM urls WHERE id = %s;", (url_id,))
-            url_data = cursor.fetchone()
-            if not url_data:
-                flash("Сайт не найден", "danger")
-                return redirect(url_for("show_url", id=url_id))
-            url = url_data[0]
-
     try:
+        with get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("SELECT url FROM urls WHERE id = %s;", (url_id,))
+                url_data = cursor.fetchone()
+                if not url_data:
+                    flash("Сайт не найден", "danger")
+                    return redirect(url_for("show_url", id=url_id))
+
         response = requests.get(
-            url,
+            url_data[0],
             timeout=10,
             headers={'User-Agent': 'Mozilla/5.0'},
             allow_redirects=True
@@ -156,10 +187,15 @@ def add_check(url_id):
         response.raise_for_status()
 
         soup = BeautifulSoup(response.text, 'html.parser')
+        
         h1 = soup.h1.get_text().strip() if soup.h1 else None
-        title = soup.title.get_text().strip() if soup.title else None
-        meta_desc = soup.find('meta', attrs={'name': 'description'})
-        description = meta_desc['content'].strip() if meta_desc else None
+        title = soup.title.string.strip() if soup.title else None
+        
+        meta_desc = soup.find('meta', attrs={'name': 'description'}) or \
+                    soup.find('meta', attrs={'property': 'og:description'})
+        description = meta_desc[
+            'content'].strip() if meta_desc and meta_desc.get(
+                'content') else None
 
         with get_conn() as conn:
             with conn.cursor() as cursor:
@@ -171,7 +207,6 @@ def add_check(url_id):
                         title,
                         description
                     ) VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id;
                 """, (
                     url_id, 
                     response.status_code,
@@ -184,10 +219,8 @@ def add_check(url_id):
         flash("Страница успешно проверена!", "success")
     except requests.exceptions.RequestException as e:
         flash(f"Произошла ошибка при проверке: {str(e)}", "danger")
-        app.logger.error(f"Ошибка проверки URL (id={url_id}): {str(e)}")
     except Exception as e:
         flash(f"Ошибка парсинга страницы: {str(e)}", "warning")
-        app.logger.error(f"Ошибка парсинга (id={url_id}): {str(e)}")
 
     return redirect(url_for("show_url", id=url_id))
 
