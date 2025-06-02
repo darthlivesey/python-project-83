@@ -1,24 +1,22 @@
-name: Python CI with Docker Compose
+name: Page Analyzer CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
     services:
-      # Добавляем сервис PostgreSQL для тестов
       postgres:
         image: postgres:13
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
-        ports:
-          - 5432:5432
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -29,48 +27,63 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Compose
-        run: |
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.23.0/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-      - name: Build and start containers
+      - name: Install dependencies
         run: |
-          docker-compose up -d --build
-          docker-compose ps
+          python -m pip install --upgrade pip
+          pip install uv
+          uv pip install -e .[dev]
 
-      - name: Wait for database to be ready
+      - name: Set up environment variables
         run: |
-          docker-compose exec db bash -c 'while ! pg_isready -U postgres; do sleep 1; done; echo "Database ready"'
+          echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres" >> $GITHUB_ENV
+          echo "SECRET_KEY=test_secret_key_$(date +%s)" >> $GITHUB_ENV
+          echo "FLASK_APP=page_analyzer.app" >> $GITHUB_ENV
 
-      - name: Run database migrations
+      - name: Initialize database
         run: |
-          docker-compose exec app python -c "from database import get_conn; \
-          conn = get_conn(); \
-          cursor = conn.cursor(); \
-          cursor.execute('''CREATE TABLE IF NOT EXISTS urls (
-                id BIGSERIAL PRIMARY KEY,
-                url VARCHAR(255) UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );'''); \
-          cursor.execute('''CREATE TABLE IF NOT EXISTS url_checks (
-                id BIGSERIAL PRIMARY KEY,
-                url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
-                status_code INT,
-                h1 TEXT,
-                title TEXT,
-                description TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );'''); \
-          conn.commit();"
+          python -c "
+          from page_analyzer.database import get_conn
+          conn = get_conn()
+          try:
+              with conn.cursor() as cur:
+                  cur.execute('DROP TABLE IF EXISTS url_checks, urls CASCADE')
+                  cur.execute('''
+                      CREATE TABLE urls (
+                          id BIGSERIAL PRIMARY KEY,
+                          url VARCHAR(255) UNIQUE NOT NULL,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                      )
+                  ''')
+                  cur.execute('''
+                      CREATE TABLE url_checks (
+                          id BIGSERIAL PRIMARY KEY,
+                          url_id BIGINT REFERENCES urls(id) ON DELETE CASCADE,
+                          status_code INT,
+                          h1 TEXT,
+                          title TEXT,
+                          description TEXT,
+                          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                      )
+                  ''')
+                  cur.execute('CREATE INDEX IF NOT EXISTS urls_url_idx ON urls(url)')
+                  cur.execute('CREATE INDEX IF NOT EXISTS url_checks_url_id_idx ON url_checks(url_id)')
+              conn.commit()
+              print('Database initialized successfully!')
+          except Exception as e:
+              print(f'Error initializing database: {e}')
+              raise
+          finally:
+              conn.close()
+          "
 
       - name: Run tests
         run: |
-          docker-compose exec app pytest -v
-
-      - name: Stop containers
-        if: always()
-        run: docker-compose down
+          pytest -v
 
   sonarqube:
     needs: build-and-test
@@ -88,7 +101,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install uv
-          make install
+          uv pip install -e .[dev]
 
       - name: SonarQube Scan
         uses: SonarSource/sonarqube-scan-action@master
@@ -98,6 +111,6 @@ jobs:
         with:
           args: >
             -Dsonar.python.version=3.10
-            -Dsonar.sources=.
+            -Dsonar.sources=page_analyzer
             -Dsonar.exclusions=**/tests/**,**/venv/**
             -Dsonar.python.xunit.reportPath=test-results.xml
