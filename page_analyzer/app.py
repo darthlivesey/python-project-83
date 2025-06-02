@@ -18,11 +18,11 @@ def index():
         url = request.form.get('url', '').strip()
         
         if not url:
-            flash('URL не может быть пустым', 'danger')
+            flash('Некорректный URL', 'danger')
         elif len(url) > 255:
-            flash('URL превышает 255 символов', 'danger')
+            flash('Некорректный URL', 'danger')
         elif not url.startswith(('http://', 'https://')):
-            flash('URL должен начинаться с http:// или https://', 'danger')
+            flash('Некорректный URL', 'danger')
         else:
             try:
                 with get_conn() as conn:
@@ -33,9 +33,9 @@ def index():
                             RETURNING id
                         """, (url,))
                         if cur.fetchone():
-                            flash('Сайт добавлен!', 'success')
+                            flash('Страница успешно добавлена!', 'success')
                         else:
-                            flash('Сайт уже существует', 'info')
+                            flash('Страница уже существует', 'info')
             except Exception as e:
                 flash(f'Ошибка базы данных: {str(e)}', 'danger')
     return render_template('index.html')
@@ -142,7 +142,7 @@ def add_check(url_id):
 
         flash("Страница успешно проверена!", "success")
     except requests.exceptions.RequestException as e:
-        flash(f"Ошибка при проверке: {str(e)}", "danger")
+        flash(f"Произошла ошибка при проверке: {str(e)}", "danger")
         app.logger.error(f"Ошибка проверки URL (id={url_id}): {str(e)}")
     except Exception as e:
         flash(f"Ошибка парсинга страницы: {str(e)}", "warning")
