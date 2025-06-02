@@ -12,9 +12,7 @@
     <div class="container py-4">
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1>Сайт: {{ url.name }}</h1>
-            <a href="{{ url_for('list_urls') }}" class="btn btn-secondary">
-                ← К списку
-            </a>
+            <a href="{{ url_for('handle_urls') }}" class="btn btn-secondary">← К списку</a>
         </div>
         
         <div class="card mb-4">

@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -41,25 +42,65 @@ def index():
     return render_template('index.html')
 
 
-@app.route("/urls")
-def list_urls():
+@app.route("/urls", methods=["GET", "POST"])
+def handle_urls():
+    if request.method == "POST":
+        url = request.form.get('url', '').strip()
+        
+        if not url:
+            flash('URL обязателен', 'danger')
+            return redirect(url_for('index'))
+        
+        try:
+            parsed = urlparse(url)
+            if not all([parsed.scheme, parsed.netloc]):
+                flash('Некорректный URL', 'danger')
+                return redirect(url_for('index'))
+                
+            normalized_url = f"{parsed.scheme}://{parsed.netloc}"
+
+            with get_conn() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        "INSERT INTO urls (url) VALUES (%s) " 
+                        "ON CONFLICT (url) DO NOTHING RETURNING id",
+                        (normalized_url,)
+                    )
+                    result = cursor.fetchone()
+                    conn.commit()
+
+                    if result:
+                        flash('Страница успешно добавлена', 'success')
+                        return redirect(url_for('show_url', id=result[0]))
+                    else:
+                        cursor.execute("SELECT id FROM urls WHERE url = %s", (
+                            normalized_url,))
+                        existing_id = cursor.fetchone()[0]
+                        flash('Страница уже существует', 'info')
+                        return redirect(url_for('show_url', id=existing_id))
+
+        except Exception as e:
+            flash(f'Ошибка при обработке URL: {str(e)}', 'danger')
+            return redirect(url_for('index'))
+
     with get_conn() as conn:
         with conn.cursor() as cursor:
             cursor.execute("""
                 SELECT 
                     u.id, 
-                    u.url, 
+                    u.url,
                     MAX(uc.created_at) as last_check,
                     (SELECT status_code FROM url_checks 
                      WHERE url_id = u.id 
                      ORDER BY created_at DESC LIMIT 1) as last_status
                 FROM urls u
                 LEFT JOIN url_checks uc ON u.id = uc.url_id
-                GROUP BY u.id
+                GROUP BY u.id, u.url
                 ORDER BY u.id DESC;
             """)
             urls = cursor.fetchall()
-    return render_template("urls.html", urls=urls)
+
+    return render_template("urls.html", url_list=urls)
 
 
 @app.route("/urls/<int:id>")

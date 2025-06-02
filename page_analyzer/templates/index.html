@@ -10,7 +10,7 @@
     <div class="container py-4">
         <h1 class="mb-4">Анализатор сайтов</h1>
         
-        <form method="POST">
+        <form method="POST" action="/urls">
             <div class="mb-3">
                 <input type="text" 
                        name="url" 
@@ -22,7 +22,15 @@
         </form>
 
         {% for category, message in get_flashed_messages(with_categories=true) %}
-            <div class="alert alert-{{ category }} mt-3">{{ message }}</div>
+            <div class="alert alert-{{ category }} mt-3">
+                {% if category == 'success' %}
+                    Страница успешно добавлена
+                {% elif category == 'info' %}
+                    Страница уже существует
+                {% else %}
+                    {{ message }}
+                {% endif %}
+            </div>
         {% endfor %}
     </div>
 </body>

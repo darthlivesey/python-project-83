@@ -10,7 +10,7 @@
         <h1 class="mb-4">Список сайтов</h1>
         
         <table class="table table-bordered table-hover">
-            <thead class="table-dark">
+            <thead class="table-light">
                 <tr>
                     <th>ID</th>
                     <th>URL</th>
@@ -19,7 +19,7 @@
                 </tr>
             </thead>
             <tbody>
-                {% for url in urls %}
+                {% for url in url_list %}
                 <tr>
                     <td>{{ url[0] }}</td>
                     <td>
@@ -27,18 +27,18 @@
                             {{ url[1] }}
                         </a>
                     </td>
-                    <td>
-                        {{ url[2].strftime('%Y-%m-%d') if url[2] else '—' }}
-                    </td>
-                    <td>{{ url[3] if url[3] else '—' }}</td>
+                    <td>{{ url[2].strftime('%Y-%m-%d') if url[2] else '' }}</td>
+                    <td>{{ url[3] if url[3] else '' }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="text-center">Нет добавленных сайтов</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
         
-        <a href="{{ url_for('index') }}" class="btn btn-primary">
-            Добавить сайт
-        </a>
+        <a href="{{ url_for('index') }}" class="btn btn-primary mt-3">Добавить сайт</a>
     </div>
 </body>
 </html>
