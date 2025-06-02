@@ -24,19 +24,3 @@
 | Парсинг        | BeautifulSoup4     |
 | Фронтенд       | Bootstrap 5        |
 | Деплой         | Gunicorn + Nginx   |
-
-## 🚀 Быстрый старт
-
-```bash
-# Клонирование репозитория
-git clone https://github.com/darthlivesey/python-project-83.git
-cd python-project-83
-
-# Установка зависимостей
-python -m pip install -r requirements.txt
-
-# Настройка .env
-echo "DATABASE_URL=postgresql://user:pass@localhost:5432/dbname" > .env
-
-# Запуск
-flask run
