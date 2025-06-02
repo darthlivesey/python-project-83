@@ -17,14 +17,16 @@ def normalize_url(url_string):
     
     if netloc.startswith('www.'):
         netloc = netloc[4:]
-
+    
     if ':' in netloc:
         host, port = netloc.split(':', 1)
-        if (scheme == 'http' and port == '80') or (scheme == 'https' 
-                                                   and port == '443'):
+        if (scheme == 'http' and port == '80') or (
+            scheme == 'https' and port == '443'):
             netloc = host
+    
     path = parsed.path.rstrip('/') or '/'
-    return urlunparse((scheme, netloc, path, '', '', ''))
+    
+    return f"{scheme}://{netloc}{path}"
 
 
 load_dotenv()
@@ -40,7 +42,7 @@ def index():
         if not url:
             flash('URL обязателен', 'danger')
             return render_template('index.html'), 422
-            
+
         try:
             parsed = urlparse(url)
             if not all([parsed.scheme, parsed.netloc]):
@@ -123,8 +125,8 @@ def handle_urls():
                     u.url,
                     MAX(uc.created_at) as last_check,
                     (SELECT status_code FROM url_checks 
-                     WHERE url_id = u.id 
-                     ORDER BY created_at DESC LIMIT 1) as last_status
+                    WHERE url_id = u.id 
+                    ORDER BY created_at DESC LIMIT 1) as last_status
                 FROM urls u
                 LEFT JOIN url_checks uc ON u.id = uc.url_id
                 GROUP BY u.id, u.url
@@ -169,6 +171,12 @@ def show_url(id):
 
 @app.post("/urls/<int:url_id>/checks")
 def add_check(url_id):
+    status_code = None
+    h1 = None
+    title = None
+    description = None
+    error = None
+    
     try:
         with get_conn() as conn:
             with conn.cursor() as cursor:
@@ -185,42 +193,38 @@ def add_check(url_id):
             allow_redirects=True
         )
         response.raise_for_status()
+        status_code = response.status_code
 
         soup = BeautifulSoup(response.text, 'html.parser')
-        
         h1 = soup.h1.get_text().strip() if soup.h1 else None
         title = soup.title.string.strip() if soup.title else None
         
         meta_desc = soup.find('meta', attrs={'name': 'description'}) or \
                     soup.find('meta', attrs={'property': 'og:description'})
-        description = meta_desc[
-            'content'].strip() if meta_desc and meta_desc.get(
-                'content') else None
+        description = meta_desc['content'].strip() if meta_desc and meta_desc.get('content') else None
 
-        with get_conn() as conn:
-            with conn.cursor() as cursor:
-                cursor.execute("""
-                    INSERT INTO url_checks (
-                        url_id, 
-                        status_code,
-                        h1,
-                        title,
-                        description
-                    ) VALUES (%s, %s, %s, %s, %s)
-                """, (
+    except requests.exceptions.RequestException as e:
+        error = f"Произошла ошибка при проверке: {str(e)}"
+    except Exception as e:
+        error = f"Ошибка парсинга страницы: {str(e)}"
+
+    with get_conn() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO url_checks (
                     url_id, 
-                    response.status_code,
+                    status_code,
                     h1,
                     title,
                     description
-                ))
-                conn.commit()
+                ) VALUES (%s, %s, %s, %s, %s)
+            """, (url_id, status_code, h1, title, description))
+            conn.commit()
 
+    if error:
+        flash(error, "danger")
+    else:
         flash("Страница успешно проверена!", "success")
-    except requests.exceptions.RequestException as e:
-        flash(f"Произошла ошибка при проверке: {str(e)}", "danger")
-    except Exception as e:
-        flash(f"Ошибка парсинга страницы: {str(e)}", "warning")
 
     return redirect(url_for("show_url", id=url_id))
 
