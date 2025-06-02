@@ -13,6 +13,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
     </div>
     {% endfor %}
+    
     <div class="container py-4">
         <h1 class="mb-4">Анализатор сайтов</h1>
         
@@ -26,18 +27,6 @@
             </div>
             <input type="submit" class="btn btn-primary" value="Добавить">
         </form>
-
-        {% for category, message in get_flashed_messages(with_categories=true) %}
-            <div class="alert alert-{{ category }} mt-3">
-                {% if category == 'success' %}
-                    Страница успешно добавлена
-                {% elif category == 'info' %}
-                    Страница уже существует
-                {% else %}
-                    {{ message }}
-                {% endif %}
-            </div>
-        {% endfor %}
     </div>
 </body>
 </html>

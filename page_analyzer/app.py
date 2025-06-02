@@ -11,7 +11,6 @@ from .database import get_conn
 
 def normalize_url(url_string):
     parsed = urlparse(url_string)
-    
     scheme = parsed.scheme.lower()
     netloc = parsed.netloc.lower()
     
@@ -24,9 +23,7 @@ def normalize_url(url_string):
             scheme == 'https' and port == '443'):
             netloc = host
     
-    path = parsed.path.rstrip('/') or '/'
-    
-    return f"{scheme}://{netloc}{path}"
+    return f"{scheme}://{netloc}"
 
 
 load_dotenv()
@@ -42,7 +39,7 @@ def index():
         if not url:
             flash('URL обязателен', 'danger')
             return render_template('index.html'), 422
-
+            
         try:
             parsed = urlparse(url)
             if not all([parsed.scheme, parsed.netloc]):
@@ -54,8 +51,7 @@ def index():
             with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "INSERT INTO urls (url) VALUES (%s) ON CONFLICT "
-                        "(url) DO NOTHING RETURNING id",
+                        "INSERT INTO urls (url) VALUES (%s) ON CONFLICT (url) DO NOTHING RETURNING id",
                         (normalized_url,)
                     )
                     result = cur.fetchone()
@@ -65,8 +61,7 @@ def index():
                         flash('Страница успешно добавлена', 'success')
                         return redirect(url_for('show_url', id=result[0]))
                     else:
-                        cur.execute("SELECT id FROM urls WHERE url = %s", 
-                                    (normalized_url,))
+                        cur.execute("SELECT id FROM urls WHERE url = %s", (normalized_url,))
                         existing_id = cur.fetchone()[0]
                         flash('Страница уже существует', 'info')
                         return redirect(url_for('show_url', id=existing_id))
@@ -124,12 +119,16 @@ def handle_urls():
                     u.id, 
                     u.url,
                     MAX(uc.created_at) as last_check,
-                    (SELECT status_code FROM url_checks 
-                    WHERE url_id = u.id 
-                    ORDER BY created_at DESC LIMIT 1) as last_status
+                    uc_last.status_code as last_status
                 FROM urls u
                 LEFT JOIN url_checks uc ON u.id = uc.url_id
-                GROUP BY u.id, u.url
+                LEFT JOIN url_checks uc_last ON uc_last.id = (
+                    SELECT id FROM url_checks 
+                    WHERE url_id = u.id 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                )
+                GROUP BY u.id, u.url, uc_last.status_code
                 ORDER BY u.id DESC;
             """)
             urls = cursor.fetchall()
@@ -185,9 +184,10 @@ def add_check(url_id):
                 if not url_data:
                     flash("Сайт не найден", "danger")
                     return redirect(url_for("show_url", id=url_id))
+                url = url_data[0]
 
         response = requests.get(
-            url_data[0],
+            url,
             timeout=10,
             headers={'User-Agent': 'Mozilla/5.0'},
             allow_redirects=True
@@ -205,8 +205,10 @@ def add_check(url_id):
 
     except requests.exceptions.RequestException as e:
         error = f"Произошла ошибка при проверке: {str(e)}"
+        app.logger.error(f"Request error for URL {url}: {str(e)}")
     except Exception as e:
         error = f"Ошибка парсинга страницы: {str(e)}"
+        app.logger.exception(f"Parsing error for URL {url}")
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
