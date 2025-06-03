@@ -85,7 +85,7 @@ def handle_urls():
             parsed = urlparse(url)
             if not all([parsed.scheme, parsed.netloc]):
                 flash('Некорректный URL', 'danger')
-                return redirect(url_for('index')), 422
+                return render_template('index.html'), 422
                 
             normalized_url = normalize_url(url)
             
@@ -175,6 +175,7 @@ def add_check(url_id):
     title = None
     description = None
     error = None
+    url = None
     
     try:
         with get_conn() as conn:
@@ -188,7 +189,7 @@ def add_check(url_id):
 
         response = requests.get(
             url,
-            timeout=10,
+            timeout=15,
             headers={'User-Agent': 'Mozilla/5.0'},
             allow_redirects=True
         )
@@ -204,9 +205,12 @@ def add_check(url_id):
         description = meta_desc['content'].strip() if meta_desc and meta_desc.get('content') else None
 
     except requests.exceptions.RequestException as e:
+        status_code = 500
         error = f"Произошла ошибка при проверке: {str(e)}"
         app.logger.error(f"Request error for URL {url}: {str(e)}")
     except Exception as e:
+        if status_code is None:
+            status_code = 500
         error = f"Ошибка парсинга страницы: {str(e)}"
         app.logger.exception(f"Parsing error for URL {url}")
 
@@ -229,7 +233,6 @@ def add_check(url_id):
         flash("Страница успешно проверена!", "success")
 
     return redirect(url_for("show_url", id=url_id))
-
 
 if __name__ == '__main__':
     app.run(debug=True)
