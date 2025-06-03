@@ -44,7 +44,7 @@ def index():
             parsed = urlparse(url)
             if not all([parsed.scheme, parsed.netloc]):
                 flash('Некорректный URL', 'danger')
-                return render_template('index.html'), 422
+                return render_template('index.html', url=url), 422
                 
             normalized_url = normalize_url(url)
             
@@ -207,12 +207,10 @@ def add_check(url_id):
     except requests.exceptions.RequestException as e:
         status_code = 500
         error = f"Произошла ошибка при проверке: {str(e)}"
+        h1 = "Ошибка проверки"
+        title = "Ошибка проверки"
+        description = str(e)
         app.logger.error(f"Request error for URL {url}: {str(e)}")
-    except Exception as e:
-        if status_code is None:
-            status_code = 500
-        error = f"Ошибка парсинга страницы: {str(e)}"
-        app.logger.exception(f"Parsing error for URL {url}")
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
@@ -222,8 +220,9 @@ def add_check(url_id):
                     status_code,
                     h1,
                     title,
-                    description
-                ) VALUES (%s, %s, %s, %s, %s)
+                    description,
+                    created_at
+                ) VALUES (%s, %s, %s, %s, %s, NOW())
             """, (url_id, status_code, h1, title, description))
             conn.commit()
 
