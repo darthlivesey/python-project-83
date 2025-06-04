@@ -1,5 +1,5 @@
 import os
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -51,7 +51,8 @@ def index():
             with get_conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "INSERT INTO urls (url) VALUES (%s) ON CONFLICT (url) DO NOTHING RETURNING id",
+                        "INSERT INTO urls (url) VALUES (%s) ON CONFLICT "
+                        "(url) DO NOTHING RETURNING id",
                         (normalized_url,)
                     )
                     result = cur.fetchone()
@@ -61,7 +62,8 @@ def index():
                         flash('Страница успешно добавлена', 'success')
                         return redirect(url_for('show_url', id=result[0]))
                     else:
-                        cur.execute("SELECT id FROM urls WHERE url = %s", (normalized_url,))
+                        cur.execute("SELECT id FROM urls WHERE url = %s", 
+                                    (normalized_url,))
                         existing_id = cur.fetchone()[0]
                         flash('Страница уже существует', 'info')
                         return redirect(url_for('show_url', id=existing_id))
@@ -79,13 +81,14 @@ def handle_urls():
         
         if not url:
             flash('URL обязателен', 'danger')
-            return redirect(url_for('index')), 422
+            return render_template('index.html', url=url), 422
             
         try:
             parsed = urlparse(url)
-            if not all([parsed.scheme, parsed.netloc]):
+            if not all([parsed.scheme, parsed.netloc]) or \
+            parsed.scheme not in ('http', 'https'):
                 flash('Некорректный URL', 'danger')
-                return render_template('index.html'), 422
+                return render_template('index.html', url=url), 422
                 
             normalized_url = normalize_url(url)
             
@@ -108,9 +111,10 @@ def handle_urls():
                         existing_id = cursor.fetchone()[0]
                         flash('Страница уже существует', 'info')
                         return redirect(url_for('show_url', id=existing_id))
+                    
         except Exception as e:
             flash(f'Ошибка при обработке URL: {str(e)}', 'danger')
-            return redirect(url_for('index')), 500
+            return render_template('index.html', url=url), 500
 
     with get_conn() as conn:
         with conn.cursor() as cursor:
@@ -202,29 +206,55 @@ def add_check(url_id):
         
         meta_desc = soup.find('meta', attrs={'name': 'description'}) or \
                     soup.find('meta', attrs={'property': 'og:description'})
-        description = meta_desc['content'].strip() if meta_desc and meta_desc.get('content') else None
+        description = meta_desc[
+            'content'].strip() if meta_desc and meta_desc.get(
+                'content') else None
 
     except requests.exceptions.RequestException as e:
         status_code = 500
         error = f"Произошла ошибка при проверке: {str(e)}"
+        app.logger.error(f"Request error for URL {url}: {str(e)}")
         h1 = "Ошибка проверки"
         title = "Ошибка проверки"
         description = str(e)
-        app.logger.error(f"Request error for URL {url}: {str(e)}")
-
-    with get_conn() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO url_checks (
-                    url_id, 
-                    status_code,
-                    h1,
-                    title,
-                    description,
-                    created_at
-                ) VALUES (%s, %s, %s, %s, %s, NOW())
-            """, (url_id, status_code, h1, title, description))
-            conn.commit()
+        app.logger.info(f"Saved error check for URL ID: {url_id}")
+    except Exception as e:
+        status_code = status_code or 500
+        error = f"Ошибка парсинга страницы: {str(e)}"
+        app.logger.exception(f"Parsing error for URL {url}")
+        h1 = h1 or "Ошибка парсинга"
+        title = title or "Ошибка парсинга"
+        description = description or str(e)
+    
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO url_checks (
+                        url_id, 
+                        status_code,
+                        h1,
+                        title,
+                        description,
+                        created_at
+                    ) VALUES (%s, %s, %s, %s, %s, NOW())
+                """, (url_id, status_code, h1, title, description))
+                conn.commit()
+                
+                cursor.execute("""
+                    SELECT id FROM url_checks 
+                    WHERE url_id = %s 
+                    ORDER BY created_at DESC 
+                    LIMIT 1
+                """, (url_id,))
+                new_check_id = cursor.fetchone()[0]
+                app.logger.info(
+                    f"Added new check ID: {new_check_id} for URL ID: {url_id}")
+                
+    except Exception as e:
+        app.logger.error(f"Database error when saving check: {str(e)}")
+        flash(f"Ошибка при сохранении результатов проверки: {str(e)}", "danger")
+        return redirect(url_for("show_url", id=url_id))
 
     if error:
         flash(error, "danger")
@@ -232,6 +262,7 @@ def add_check(url_id):
         flash("Страница успешно проверена!", "success")
 
     return redirect(url_for("show_url", id=url_id))
+
 
 if __name__ == '__main__':
     app.run(debug=True)
