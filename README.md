@@ -24,3 +24,5 @@
 | Парсинг        | BeautifulSoup4     |
 | Фронтенд       | Bootstrap 5        |
 | Деплой         | Gunicorn + Nginx   |
+
+## [__Сайт проекта__](https://python-project-83-wi5b.onrender.com)
